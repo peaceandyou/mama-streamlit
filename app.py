@@ -11,7 +11,10 @@ st.set_page_config(
 # ── 自定义 CSS（小红书风格）────────────────────────────────────
 st.markdown("""
 <style>
-  .main { background: #FDF6F7; }
+  .stApp { background: #FDF6F7; }
+  .main .block-container { background: #FDF6F7; }
+  [data-testid="stAppViewContainer"] { background: #FDF6F7; }
+  [data-testid="stHeader"] { background: #FFF0F2; border-bottom: 1px solid #F0D0D5; }
   section[data-testid="stSidebar"] { background: #fff0f2; }
   h1 { color: #FF2442 !important; }
   h2, h3 { color: #1A1A1A !important; }
