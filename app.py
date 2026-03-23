@@ -410,10 +410,9 @@ with right:
                             "Content-Type": "application/json",
                             "x-api-key": API_KEY,
                             "anthropic-version": "2023-06-01",
-                            "anthropic-beta": "messages-2023-12-15"
                         },
                         json={
-                            "model": "claude-opus-4-6",
+                            "model": "claude-3-5-sonnet-20241022",
                             "max_tokens": 1024,
                             "messages": [{"role": "user", "content": prompt}]
                         },
