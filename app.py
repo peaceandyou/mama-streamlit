@@ -1,5 +1,6 @@
 import streamlit as st
-import httpx
+import requests
+import json
 
 st.set_page_config(
     page_title="嘛嘛公寓 · 小红书运营工具",
@@ -404,24 +405,35 @@ with right:
 
             with st.spinner("✨ AI 正在创作中，请稍候…"):
                 try:
-                    resp = httpx.post(
+                    resp = requests.post(
                         f"{API_URL}/v1/chat/completions",
-                        headers={
-                            "Content-Type": "application/json",
-                            "Authorization": f"Bearer {API_KEY}",
-                        },
-                        json={
-                            "model": "gpt-5",
-                            "max_tokens": 1024,
-                            "messages": [{"role": "user", "content": prompt}]
-                        },
-                        timeout=60
+                        headers={"Authorization": f"Bearer {API_KEY}", "content-type": "application/json"},
+                        json={"model": "gpt-5", "max_tokens": 1024, "stream": True,
+                              "messages": [{"role": "user", "content": prompt}]},
+                        stream=True, timeout=120,
                     )
-                    data = resp.json()
-                    if "choices" in data:
-                        st.session_state.generated_post = data["choices"][0]["message"]["content"]
+                    if resp.status_code != 200:
+                        st.error(f"生成失败：{resp.status_code} {resp.text[:200]}")
                     else:
-                        st.error(f"生成失败：{data.get('error', {}).get('message', str(data))}")
+                        full_text = ""
+                        for line in resp.iter_lines():
+                            if not line:
+                                continue
+                            line = line.decode("utf-8") if isinstance(line, bytes) else line
+                            if line.startswith("data: "):
+                                data = line[6:]
+                                if data.strip() == "[DONE]":
+                                    break
+                                try:
+                                    c = json.loads(data).get("choices", [{}])[0].get("delta", {}).get("content", "")
+                                    if c:
+                                        full_text += c
+                                except Exception:
+                                    continue
+                        if full_text:
+                            st.session_state.generated_post = full_text
+                        else:
+                            st.error("生成失败：返回内容为空，请检查 API Key")
                 except Exception as e:
                     st.error(f"生成失败：{e}")
 
