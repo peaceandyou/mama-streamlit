@@ -405,22 +405,21 @@ with right:
             with st.spinner("✨ AI 正在创作中，请稍候…"):
                 try:
                     resp = httpx.post(
-                        f"{API_URL}/v1/messages",
+                        f"{API_URL}/v1/chat/completions",
                         headers={
                             "Content-Type": "application/json",
-                            "x-api-key": API_KEY,
-                            "anthropic-version": "2023-06-01",
+                            "Authorization": f"Bearer {API_KEY}",
                         },
                         json={
-                            "model": "claude-3-5-sonnet-20241022",
+                            "model": "gpt-5",
                             "max_tokens": 1024,
                             "messages": [{"role": "user", "content": prompt}]
                         },
                         timeout=60
                     )
                     data = resp.json()
-                    if "content" in data:
-                        st.session_state.generated_post = data["content"][0]["text"]
+                    if "choices" in data:
+                        st.session_state.generated_post = data["choices"][0]["message"]["content"]
                     else:
                         st.error(f"生成失败：{data.get('error', {}).get('message', str(data))}")
                 except Exception as e:
