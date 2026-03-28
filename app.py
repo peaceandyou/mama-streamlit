@@ -1,6 +1,8 @@
 import streamlit as st
 import requests
 import json
+import os
+from datetime import datetime
 
 st.set_page_config(
     page_title="嘛嘛公寓 · 小红书运营工具",
@@ -152,6 +154,14 @@ div[data-testid="stExpander"] {
     color: #FF2442 !important;
     border-radius: 12px !important;
 }
+
+/* 更新中提示 */
+.updating-badge {
+    background: #FFF7E6; border: 1.5px solid #FFB800;
+    color: #B45309; border-radius: 20px;
+    padding: 4px 14px; font-size: 12px; font-weight: 600;
+    display: inline-flex; align-items: center; gap: 5px;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -191,8 +201,8 @@ if not st.session_state.auth:
 API_KEY = st.secrets.get("api_key", "")
 API_URL = st.secrets.get("api_url", "https://code.newcli.com/claude")
 
-# ── 热点数据 ──────────────────────────────────────────────────
-HOT_TOPICS = [
+# ── 默认热点数据 ──────────────────────────────────────────────
+DEFAULT_HOT_TOPICS = [
     {"id":1,  "name":"毕业季租房避坑指南",      "heat":"982万",  "related":True,
      "reason":"毕业生是嘛嘛公寓的核心目标人群，零中介、月付模式正好戳中他们的痛点",
      "tip":"以「第一次租房的你」为角色切入，重点突出「零中介省了多少钱」的数字对比",
@@ -233,6 +243,107 @@ HOT_TOPICS = [
      "url":"https://www.xiaohongshu.com/search_result?keyword=年轻人第一套家"},
 ]
 
+# ── 热点持久化：读写本地文件 ──────────────────────────────────
+TOPICS_FILE = os.path.join(os.path.dirname(__file__), "hot_topics_saved.json")
+
+def load_saved_topics():
+    """从文件加载热点，失败则返回默认数据"""
+    try:
+        if os.path.exists(TOPICS_FILE):
+            with open(TOPICS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data.get("topics", DEFAULT_HOT_TOPICS), data.get("updated_at", "")
+    except Exception:
+        pass
+    return DEFAULT_HOT_TOPICS, ""
+
+def save_topics(topics, updated_at):
+    """保存热点到文件"""
+    try:
+        with open(TOPICS_FILE, "w", encoding="utf-8") as f:
+            json.dump({"topics": topics, "updated_at": updated_at}, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+# ── Session State ─────────────────────────────────────────────
+for k, v in [("selected_topic",""), ("post_type","grass"),
+             ("tone","轻松日常"), ("generated_post",""),
+             ("hot_topics", None), ("hot_topics_updated_at", None)]:
+    if k not in st.session_state:
+        st.session_state[k] = v
+
+if st.session_state.hot_topics is None:
+    saved_topics, saved_at = load_saved_topics()
+    st.session_state.hot_topics = saved_topics
+    st.session_state.hot_topics_updated_at = saved_at
+
+# ── 热点更新函数 ──────────────────────────────────────────────
+def update_hot_topics():
+    if not API_KEY:
+        st.error("API Key 未配置，无法更新热点")
+        return
+
+    prompt = """你是小红书运营专家。请根据当前小红书平台的流行趋势，为「重庆嘛嘛公寓」生成10个热点话题。
+
+公寓信息：月租999元起，熙街商圈地铁站旁，20-30㎡精装单间/复式，零中介费，灵活租期，月付，面向外来青年和应届毕业生。
+
+要求：
+- 10个话题，其中7-8个与嘛嘛公寓高度相关，2-3个热门但关联度低
+- 热度数据用真实感的数字（如「xxx万」）
+- 对相关话题给出具体运营建议
+
+请严格按以下JSON格式返回，不要加任何说明文字，只返回JSON数组：
+[
+  {
+    "name": "话题名称",
+    "heat": "xxx万",
+    "related": true,
+    "reason": "为何与嘛嘛公寓相关的分析（相关时填写）",
+    "tip": "具体的运营建议（相关时填写）"
+  }
+]
+不相关的话题 reason 和 tip 填空字符串 ""。"""
+
+    try:
+        resp = requests.post(
+            f"{API_URL}/v1/chat/completions",
+            headers={"Authorization": f"Bearer {API_KEY}", "content-type": "application/json"},
+            json={"model": "gpt-5", "max_tokens": 2048,
+                  "messages": [{"role": "user", "content": prompt}]},
+            timeout=60,
+        )
+        if resp.status_code != 200:
+            st.error(f"更新失败：{resp.status_code}")
+            return
+
+        content = resp.json()["choices"][0]["message"]["content"]
+        # 提取JSON部分
+        start = content.find("[")
+        end = content.rfind("]") + 1
+        if start == -1 or end == 0:
+            st.error("更新失败：AI返回格式有误，请重试")
+            return
+
+        new_topics_raw = json.loads(content[start:end])
+        new_topics = []
+        for i, t in enumerate(new_topics_raw):
+            new_topics.append({
+                "id": i + 1,
+                "name": t.get("name", ""),
+                "heat": t.get("heat", ""),
+                "related": t.get("related", False),
+                "reason": t.get("reason", ""),
+                "tip": t.get("tip", ""),
+                "url": f"https://www.xiaohongshu.com/search_result?keyword={t.get('name','')}",
+            })
+        now_str = datetime.now().strftime("%Y年%m月%d日 %H:%M")
+        st.session_state.hot_topics = new_topics
+        st.session_state.hot_topics_updated_at = now_str
+        save_topics(new_topics, now_str)
+
+    except Exception as e:
+        st.error(f"更新失败：{e}")
+
 # ── 导航栏 ────────────────────────────────────────────────────
 st.markdown("""
 <div class="navbar">
@@ -249,12 +360,6 @@ st.markdown("""
   </div>
 </div>
 """, unsafe_allow_html=True)
-
-# ── Session State ─────────────────────────────────────────────
-for k, v in [("selected_topic",""), ("post_type","grass"),
-             ("tone","轻松日常"), ("generated_post","")]:
-    if k not in st.session_state:
-        st.session_state[k] = v
 
 # ── 主布局 ────────────────────────────────────────────────────
 left, right = st.columns([1, 1.3], gap="large")
@@ -280,13 +385,26 @@ with left:
     </div>
     """, unsafe_allow_html=True)
 
-    # 热点话题
+    # 热点话题标题行：标题 + 更新按钮 + 相关数量
+    HOT_TOPICS = st.session_state.hot_topics
     related_count = sum(1 for t in HOT_TOPICS if t["related"])
-    st.markdown(f"""
-    <div class="card-title">🔥 小红书热点话题
-      <span style="margin-left:auto;background:#FFF0F2;color:#FF2442;
-      font-size:11px;padding:3px 10px;border-radius:20px;font-weight:600;">{related_count} 个相关</span>
-    </div>""", unsafe_allow_html=True)
+
+    title_col, btn_col, badge_col = st.columns([2.2, 1.2, 1])
+    with title_col:
+        updated_at = st.session_state.hot_topics_updated_at or ""
+        date_hint = f'<span style="font-size:11px;color:#bbb;font-weight:400;margin-left:8px;">更新于 {updated_at}</span>' if updated_at else '<span style="font-size:11px;color:#bbb;font-weight:400;margin-left:8px;">默认数据</span>'
+        st.markdown(f'<div style="font-size:16px;font-weight:700;color:#1A1A1A;padding-top:6px;">🔥 小红书热点话题{date_hint}</div>',
+                    unsafe_allow_html=True)
+    with btn_col:
+        if st.button("🔄 更新热点", key="update_topics", use_container_width=True):
+            with st.spinner("热点更新中…"):
+                update_hot_topics()
+            st.rerun()
+    with badge_col:
+        st.markdown(f'<div style="background:#FFF0F2;color:#FF2442;font-size:11px;padding:6px 10px;border-radius:20px;font-weight:600;text-align:center;margin-top:2px;">{related_count} 个相关</div>',
+                    unsafe_allow_html=True)
+
+    st.markdown("<div style='margin-bottom:8px'></div>", unsafe_allow_html=True)
 
     for i, t in enumerate(HOT_TOPICS):
         label = f"{'🥇' if i==0 else '🥈' if i==1 else '🥉' if i==2 else f'{i+1}.'} #{t['name']}  🔥{t['heat']}{'  ✅' if t['related'] else ''}"
@@ -307,7 +425,7 @@ with left:
     st.markdown('<div class="card-title" style="margin-top:8px;">💡 相关热点分析建议</div>',
                 unsafe_allow_html=True)
     for t in HOT_TOPICS:
-        if t["related"]:
+        if t["related"] and t["tip"]:
             st.markdown(f"""
             <div class="analysis-item">
               <div class="analysis-topic"># {t['name']} <span style="font-size:11px;font-weight:400;color:#FF8899">🔥{t['heat']}</span></div>
@@ -380,6 +498,30 @@ with right:
 
     st.markdown("<hr style='border-color:#F0E0E3;margin:14px 0'>", unsafe_allow_html=True)
 
+    # ── 新增：我的想法 ────────────────────────────────────────
+    st.markdown('<div class="sec-label">💬 我的想法（选填）</div>', unsafe_allow_html=True)
+    user_idea = st.text_area(
+        "",
+        placeholder="例如：想写一篇温暖的故事，讲第一次来重庆打工租到嘛嘛公寓的感受……",
+        height=90,
+        label_visibility="collapsed",
+        key="user_idea"
+    )
+
+    st.markdown("<div style='margin-bottom:4px'></div>", unsafe_allow_html=True)
+
+    # ── 新增：参考模板 ────────────────────────────────────────
+    st.markdown('<div class="sec-label">📋 参考模板（选填，粘贴你喜欢的帖子风格）</div>', unsafe_allow_html=True)
+    user_template = st.text_area(
+        "",
+        placeholder="把你喜欢的小红书帖子粘贴到这里，AI会参考它的风格和结构来写……",
+        height=110,
+        label_visibility="collapsed",
+        key="user_template"
+    )
+
+    st.markdown("<hr style='border-color:#F0E0E3;margin:14px 0'>", unsafe_allow_html=True)
+
     # 生成按钮
     if st.button("✨ 一键生成帖子", use_container_width=True, type="primary"):
         if not API_KEY:
@@ -392,6 +534,14 @@ with right:
                 "ad":    "写一篇小红书商业广告帖，标题直接点出最大卖点，列3-5个核心优势配emoji分隔，重点突出999元起和零中介，有明确引导行动",
                 "ops":   "写一篇小红书互动运营贴，标题用疑问句引发互动欲望，设置评论钩子，用「你们觉得…」「评论区聊聊…」等互动语句"
             }
+
+            # 拼接额外指令
+            extra = ""
+            if user_idea.strip():
+                extra += f"\n\n运营者的想法和方向：{user_idea.strip()}"
+            if user_template.strip():
+                extra += f"\n\n请参考以下帖子的风格、语气和结构（不要抄内容，只学风格）：\n{user_template.strip()}"
+
             prompt = f"""你是专业的小红书文案运营，为「重庆嘛嘛公寓」创作一篇帖子。
 
 公寓信息：月租999元起，熙街商圈地铁站旁，20-30㎡精装单间/复式，零中介费，灵活租期，月付，家具家电全配，配套休闲书屋和多功能活动大厅，面向外来青年和应届毕业生。
@@ -399,7 +549,7 @@ with right:
 任务：{topic_part}，{type_guide[st.session_state.post_type]}
 
 风格：{st.session_state.tone}
-关键词：{' '.join(selected_kws)}
+关键词：{' '.join(selected_kws)}{extra}
 
 直接输出帖子内容，不加任何说明语，200-350字，有小红书「闺蜜推荐」的真实感。"""
 
