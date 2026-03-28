@@ -2,7 +2,10 @@ import streamlit as st
 import requests
 import json
 import os
+import base64
+import io
 from datetime import datetime
+from PIL import Image, ImageEnhance, ImageFilter
 
 st.set_page_config(
     page_title="嘛嘛公寓 · 小红书运营工具",
@@ -361,8 +364,80 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# ── 主布局 ────────────────────────────────────────────────────
-left, right = st.columns([1, 1.3], gap="large")
+# ── 图片美化函数 ──────────────────────────────────────────────
+def beautify_image(img: Image.Image, style: str) -> Image.Image:
+    img = img.convert("RGB")
+    if style == "小清新":
+        img = ImageEnhance.Brightness(img).enhance(1.15)
+        img = ImageEnhance.Contrast(img).enhance(1.1)
+        img = ImageEnhance.Color(img).enhance(0.9)
+        img = ImageEnhance.Sharpness(img).enhance(1.3)
+    elif style == "温暖橙":
+        img = ImageEnhance.Brightness(img).enhance(1.1)
+        img = ImageEnhance.Color(img).enhance(1.3)
+        img = ImageEnhance.Contrast(img).enhance(1.05)
+        r, g, b = img.split()
+        r = ImageEnhance.Brightness(r).enhance(1.12)
+        b = ImageEnhance.Brightness(b).enhance(0.88)
+        img = Image.merge("RGB", (r, g, b))
+    elif style == "复古胶片":
+        img = ImageEnhance.Color(img).enhance(0.6)
+        img = ImageEnhance.Brightness(img).enhance(1.05)
+        img = ImageEnhance.Contrast(img).enhance(0.9)
+        r, g, b = img.split()
+        r = ImageEnhance.Brightness(r).enhance(1.08)
+        b = ImageEnhance.Brightness(b).enhance(0.85)
+        img = Image.merge("RGB", (r, g, b))
+    elif style == "明亮通透":
+        img = ImageEnhance.Brightness(img).enhance(1.25)
+        img = ImageEnhance.Contrast(img).enhance(1.15)
+        img = ImageEnhance.Color(img).enhance(1.1)
+        img = ImageEnhance.Sharpness(img).enhance(1.4)
+    return img
+
+def image_to_base64(img: Image.Image) -> str:
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=90)
+    return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+def image_to_bytes(img: Image.Image) -> bytes:
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=90)
+    return buf.getvalue()
+
+def generate_image_caption(img: Image.Image, style: str, api_key: str, api_url: str) -> str:
+    b64 = image_to_base64(img)
+    prompt = f"""你是专业的小红书图文运营，请根据这张图片，为「重庆嘛嘛公寓」写一篇小红书帖子。
+
+公寓信息：月租999元起，熙街商圈地铁站旁，20-30㎡精装单间/复式，零中介费，灵活租期，面向外来青年和应届毕业生。
+
+图片美化风格：{style}
+要求：第一人称，真实自然，200-300字，结尾带3-5个话题标签，有「闺蜜推荐」的亲切感，自然融入公寓优势。
+直接输出帖子内容，不加任何说明语。"""
+
+    resp = requests.post(
+        f"{api_url}/v1/chat/completions",
+        headers={"Authorization": f"Bearer {api_key}", "content-type": "application/json"},
+        json={
+            "model": "gpt-4o",
+            "max_tokens": 1024,
+            "messages": [{"role": "user", "content": [
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
+                {"type": "text", "text": prompt}
+            ]}]
+        },
+        timeout=60,
+    )
+    if resp.status_code != 200:
+        raise Exception(f"API错误：{resp.status_code}")
+    return resp.json()["choices"][0]["message"]["content"]
+
+# ── 主布局（标签页切换）────────────────────────────────────────
+tab_copy, tab_image = st.tabs(["✍️ 文案工具", "🎨 图片美化"])
+
+# ══ 文案工具 ══════════════════════════════════════════════════
+with tab_copy:
+    left, right = st.columns([1, 1.3], gap="large")
 
 # ══ 左列 ══════════════════════════════════════════════════════
 with left:
@@ -614,3 +689,126 @@ with right:
         if c2.button("🔄 重新生成", use_container_width=True):
             st.session_state.generated_post = ""
             st.rerun()
+
+# ══ 图片美化 ══════════════════════════════════════════════════
+with tab_image:
+    st.markdown('<div class="card-title" style="margin-top:8px;">🎨 小红书图片美化</div>',
+                unsafe_allow_html=True)
+    st.markdown('<div style="font-size:13px;color:#888;margin-bottom:16px;">上传公寓或生活照片，一键美化成小红书风格，并自动生成配套文案。</div>',
+                unsafe_allow_html=True)
+
+    img_left, img_right = st.columns([1, 1.2], gap="large")
+
+    with img_left:
+        st.markdown('<div class="sec-label">📷 上传照片</div>', unsafe_allow_html=True)
+        uploaded_file = st.file_uploader(
+            "", type=["jpg", "jpeg", "png"],
+            label_visibility="collapsed",
+            key="img_upload"
+        )
+
+        if uploaded_file:
+            original_img = Image.open(uploaded_file)
+            st.image(original_img, caption="原图", use_container_width=True)
+
+            st.markdown("<hr style='border-color:#F0E0E3;margin:14px 0'>", unsafe_allow_html=True)
+            st.markdown('<div class="sec-label">🎨 选择美化风格</div>', unsafe_allow_html=True)
+
+            style_info = {
+                "小清新": "清透自然，色彩淡雅，适合室内/生活场景",
+                "温暖橙": "暖色调，温馨舒适，适合居家/傍晚场景",
+                "复古胶片": "低饱和，复古质感，适合文艺风格",
+                "明亮通透": "高亮高对比，清晰锐利，适合空间展示",
+            }
+
+            style_cols = st.columns(2)
+            for i, (s, desc) in enumerate(style_info.items()):
+                with style_cols[i % 2]:
+                    st.markdown(f"""
+                    <div style="background:#FFF0F2;border:1.5px solid #FFD0D8;border-radius:10px;
+                    padding:10px 12px;margin-bottom:8px;">
+                      <div style="font-size:13px;font-weight:700;color:#FF2442;">{s}</div>
+                      <div style="font-size:11px;color:#888;margin-top:3px;">{desc}</div>
+                    </div>""", unsafe_allow_html=True)
+
+            img_style = st.radio(
+                "选择风格",
+                list(style_info.keys()),
+                horizontal=True,
+                label_visibility="collapsed",
+                key="img_style"
+            )
+
+            st.markdown("<hr style='border-color:#F0E0E3;margin:14px 0'>", unsafe_allow_html=True)
+
+            gen_caption = st.checkbox("✍️ 同时生成配套文案", value=True, key="gen_caption")
+
+            if st.button("✨ 一键美化", use_container_width=True, type="primary"):
+                with st.spinner("🎨 图片美化中，请稍候…"):
+                    beautified = beautify_image(original_img, img_style)
+                    st.session_state["beautified_img"] = beautified
+                    st.session_state["beautified_style"] = img_style
+
+                if gen_caption and API_KEY:
+                    with st.spinner("✍️ AI 生成文案中…"):
+                        try:
+                            caption = generate_image_caption(beautified, img_style, API_KEY, API_URL)
+                            st.session_state["img_caption"] = caption
+                        except Exception as e:
+                            st.session_state["img_caption"] = ""
+                            st.warning(f"文案生成失败：{e}")
+                elif gen_caption and not API_KEY:
+                    st.warning("API Key 未配置，跳过文案生成")
+
+                st.rerun()
+
+    with img_right:
+        if "beautified_img" in st.session_state and st.session_state["beautified_img"] is not None:
+            st.markdown(f'<div class="sec-label">✅ 美化结果 · {st.session_state.get("beautified_style","")}</div>',
+                        unsafe_allow_html=True)
+            st.image(st.session_state["beautified_img"], use_container_width=True)
+
+            img_bytes = image_to_bytes(st.session_state["beautified_img"])
+            st.download_button(
+                "📥 下载美化图片",
+                data=img_bytes,
+                file_name=f"嘛嘛公寓_{st.session_state.get('beautified_style','')}.jpg",
+                mime="image/jpeg",
+                use_container_width=True
+            )
+
+            if st.session_state.get("img_caption"):
+                st.markdown("<hr style='border-color:#F0E0E3;margin:14px 0'>", unsafe_allow_html=True)
+                st.markdown('<div class="sec-label">✍️ AI 配套文案</div>', unsafe_allow_html=True)
+                st.markdown("""
+                <div class="preview-bar">
+                  <span class="dot" style="background:#FF5F5F"></span>
+                  <span class="dot" style="background:#FFB800"></span>
+                  <span class="dot" style="background:#22c55e"></span>
+                  <span style="font-size:11px;color:#999;margin-left:auto">小红书 · 图文文案</span>
+                </div>""", unsafe_allow_html=True)
+
+                caption_text = st.text_area(
+                    "", value=st.session_state["img_caption"],
+                    height=260, label_visibility="collapsed",
+                    key="caption_output"
+                )
+                c1, c2 = st.columns(2)
+                c1.download_button(
+                    "📥 下载文案",
+                    data=caption_text,
+                    file_name="小红书图文文案.txt",
+                    mime="text/plain",
+                    use_container_width=True
+                )
+                if c2.button("🔄 重新生成文案", use_container_width=True, key="regen_caption"):
+                    st.session_state["img_caption"] = ""
+                    st.rerun()
+        else:
+            st.markdown("""
+            <div style="height:300px;display:flex;align-items:center;justify-content:center;
+            flex-direction:column;gap:12px;background:#FFF8F9;border-radius:16px;
+            border:2px dashed #FFD0D8;">
+              <div style="font-size:40px;">🖼️</div>
+              <div style="font-size:14px;color:#bbb;">上传图片后，美化结果会显示在这里</div>
+            </div>""", unsafe_allow_html=True)
