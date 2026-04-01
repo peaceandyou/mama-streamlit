@@ -5,7 +5,7 @@ import os
 import base64
 import io
 from datetime import datetime
-from PIL import Image, ImageEnhance, ImageFilter
+from PIL import Image, ImageEnhance, ImageFilter, ImageDraw, ImageFont
 
 st.set_page_config(
     page_title="嘛嘛公寓 · 小红书运营工具",
@@ -395,6 +395,125 @@ def beautify_image(img: Image.Image, style: str) -> Image.Image:
         img = ImageEnhance.Sharpness(img).enhance(1.4)
     return img
 
+def add_polaroid_frame(img: Image.Image) -> Image.Image:
+    """宝丽来白边框 + 日期戳"""
+    w, h = img.size
+    border = int(w * 0.05)
+    bottom_border = int(w * 0.12)
+
+    new_img = Image.new("RGB", (w + border * 2, h + border + bottom_border), "white")
+    new_img.paste(img, (border, border))
+
+    draw = ImageDraw.Draw(new_img)
+    date_text = datetime.now().strftime("%Y.%m.%d")
+    try:
+        font = ImageFont.truetype("/System/Library/Fonts/PingFang.ttc", int(w * 0.04))
+    except:
+        font = ImageFont.load_default()
+
+    text_bbox = draw.textbbox((0, 0), date_text, font=font)
+    text_w = text_bbox[2] - text_bbox[0]
+    text_x = (new_img.width - text_w) // 2
+    text_y = h + border + int(bottom_border * 0.3)
+    draw.text((text_x, text_y), date_text, fill="#888888", font=font)
+
+    return new_img
+
+def add_info_stickers(img: Image.Image) -> Image.Image:
+    """彩色信息贴纸"""
+    img = img.copy()
+    draw = ImageDraw.Draw(img)
+    w, h = img.size
+
+    stickers = [
+        {"text": "💰 月租999起", "color": "#FFE5E5", "pos": (int(w*0.05), int(h*0.05))},
+        {"text": "📍 熙街商圈", "color": "#E5F5FF", "pos": (int(w*0.05), int(h*0.12))},
+        {"text": "✅ 零中介", "color": "#E5FFE5", "pos": (int(w*0.05), int(h*0.19))},
+    ]
+
+    try:
+        font = ImageFont.truetype("/System/Library/Fonts/PingFang.ttc", int(w * 0.035))
+    except:
+        font = ImageFont.load_default()
+
+    for sticker in stickers:
+        text = sticker["text"]
+        bbox = draw.textbbox((0, 0), text, font=font)
+        text_w, text_h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+
+        x, y = sticker["pos"]
+        padding = int(w * 0.015)
+        draw.rounded_rectangle(
+            [x, y, x + text_w + padding * 2, y + text_h + padding * 2],
+            radius=int(w * 0.015),
+            fill=sticker["color"]
+        )
+        draw.text((x + padding, y + padding), text, fill="#333333", font=font)
+
+    return img
+
+def add_hand_drawn_doodles(img: Image.Image) -> Image.Image:
+    """手绘涂鸦：圆圈、箭头、星星"""
+    img = img.copy()
+    draw = ImageDraw.Draw(img)
+    w, h = img.size
+    line_width = max(2, int(w * 0.005))
+
+    # 右上角圆圈
+    circle_x, circle_y = int(w * 0.75), int(h * 0.15)
+    circle_r = int(w * 0.08)
+    draw.ellipse(
+        [circle_x - circle_r, circle_y - circle_r, circle_x + circle_r, circle_y + circle_r],
+        outline="#FF6B7A", width=line_width
+    )
+
+    # 左下角箭头
+    arrow_start = (int(w * 0.15), int(h * 0.85))
+    arrow_end = (int(w * 0.25), int(h * 0.75))
+    draw.line([arrow_start, arrow_end], fill="#FFB800", width=line_width)
+    draw.polygon([
+        arrow_end,
+        (arrow_end[0] - int(w * 0.02), arrow_end[1] + int(w * 0.015)),
+        (arrow_end[0] + int(w * 0.015), arrow_end[1] + int(w * 0.02))
+    ], fill="#FFB800")
+
+    # 右下角星星
+    star_x, star_y = int(w * 0.85), int(h * 0.88)
+    star_size = int(w * 0.025)
+    draw.text((star_x, star_y), "⭐", fill="#FFD700", font=None)
+
+    return img
+
+def add_magazine_bar(img: Image.Image) -> Image.Image:
+    """杂志风底部信息栏"""
+    w, h = img.size
+    bar_height = int(h * 0.15)
+
+    new_img = Image.new("RGB", (w, h + bar_height), "white")
+    new_img.paste(img, (0, 0))
+
+    draw = ImageDraw.Draw(new_img)
+    draw.rectangle([0, h, w, h + bar_height], fill="#FFF0F2")
+
+    try:
+        font_title = ImageFont.truetype("/System/Library/Fonts/PingFang.ttc", int(w * 0.05))
+        font_sub = ImageFont.truetype("/System/Library/Fonts/PingFang.ttc", int(w * 0.03))
+    except:
+        font_title = font_sub = ImageFont.load_default()
+
+    title = "嘛嘛公寓 · 重庆熙街商圈"
+    subtitle = "月租999起 | 零中介 | 地铁房"
+
+    title_bbox = draw.textbbox((0, 0), title, font=font_title)
+    title_w = title_bbox[2] - title_bbox[0]
+    draw.text(((w - title_w) // 2, h + int(bar_height * 0.2)), title, fill="#FF2442", font=font_title)
+
+    sub_bbox = draw.textbbox((0, 0), subtitle, font=font_sub)
+    sub_w = sub_bbox[2] - sub_bbox[0]
+    draw.text(((w - sub_w) // 2, h + int(bar_height * 0.6)), subtitle, fill="#888888", font=font_sub)
+
+    return new_img
+
 def image_to_base64(img: Image.Image) -> str:
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=90)
@@ -740,12 +859,34 @@ with tab_image:
             )
 
             st.markdown("<hr style='border-color:#F0E0E3;margin:14px 0'>", unsafe_allow_html=True)
+            st.markdown('<div class="sec-label">✨ 装饰效果（可多选）</div>', unsafe_allow_html=True)
+
+            deco_options = st.multiselect(
+                "",
+                ["📸 宝丽来边框", "🏷️ 信息贴纸", "✏️ 手绘涂鸦", "📰 杂志排版"],
+                default=[],
+                label_visibility="collapsed",
+                key="deco_options"
+            )
+
+            st.markdown("<hr style='border-color:#F0E0E3;margin:14px 0'>", unsafe_allow_html=True)
 
             gen_caption = st.checkbox("✍️ 同时生成配套文案", value=True, key="gen_caption")
 
             if st.button("✨ 一键美化", use_container_width=True, type="primary"):
                 with st.spinner("🎨 图片美化中，请稍候…"):
                     beautified = beautify_image(original_img, img_style)
+
+                    # 应用装饰效果
+                    if "📸 宝丽来边框" in deco_options:
+                        beautified = add_polaroid_frame(beautified)
+                    if "🏷️ 信息贴纸" in deco_options:
+                        beautified = add_info_stickers(beautified)
+                    if "✏️ 手绘涂鸦" in deco_options:
+                        beautified = add_hand_drawn_doodles(beautified)
+                    if "📰 杂志排版" in deco_options:
+                        beautified = add_magazine_bar(beautified)
+
                     st.session_state["beautified_img"] = beautified
                     st.session_state["beautified_style"] = img_style
 
