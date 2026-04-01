@@ -1,0 +1,29 @@
+# 敏感配置文件
+.streamlit/secrets.toml
+
+# 测试文件
+test_replicate.py
+
+# 本地数据
+hot_topics_saved.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# 虚拟环境
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store

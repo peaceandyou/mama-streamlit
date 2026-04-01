@@ -4,6 +4,7 @@ import json
 import os
 import base64
 import io
+import replicate
 from datetime import datetime
 from PIL import Image, ImageEnhance, ImageFilter, ImageDraw, ImageFont
 
@@ -203,6 +204,8 @@ if not st.session_state.auth:
 # ── 配置 ──────────────────────────────────────────────────────
 API_KEY = st.secrets.get("api_key", "")
 API_URL = st.secrets.get("api_url", "https://code.newcli.com/claude")
+REPLICATE_API_TOKEN = st.secrets.get("replicate_api_token", "")
+VOLCENGINE_API_KEY = st.secrets.get("volcengine_api_key", "")
 
 # ── 默认热点数据 ──────────────────────────────────────────────
 DEFAULT_HOT_TOPICS = [
@@ -551,6 +554,177 @@ def generate_image_caption(img: Image.Image, style: str, api_key: str, api_url: 
         raise Exception(f"API错误：{resp.status_code}")
     return resp.json()["choices"][0]["message"]["content"]
 
+# ── AI 图片生成函数（火山引擎）──────────────────────────────
+def volcengine_generate_from_text(description: str, api_key: str) -> str:
+    """火山引擎 AI 文字生成图片"""
+    if not api_key:
+        raise Exception("火山引擎 API Key 未配置")
+
+    url = "https://ark.cn-beijing.volces.com/api/v3/images/generations"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
+    }
+    data = {
+        "model": "doubao-seedream-5.0-260128",
+        "prompt": f"高质量公寓室内照片，{description}，专业摄影，明亮清晰，小红书风格，真实感",
+        "response_format": "url",
+        "size": "2K"
+    }
+
+    resp = requests.post(url, headers=headers, json=data, timeout=60)
+    if resp.status_code != 200:
+        raise Exception(f"API错误：{resp.status_code} {resp.text}")
+
+    result = resp.json()
+    if "data" in result and len(result["data"]) > 0:
+        return result["data"][0]["url"]
+    else:
+        raise Exception("生成失败：返回数据格式错误")
+
+def volcengine_enhance_image(img: Image.Image, requirements: str, api_key: str) -> str:
+    """火山引擎 AI 图片优化"""
+    if not api_key:
+        raise Exception("火山引擎 API Key 未配置")
+
+    # 将图片转换为base64
+    img_buffer = io.BytesIO()
+    img.save(img_buffer, format="JPEG")
+    img_base64 = base64.b64encode(img_buffer.getvalue()).decode()
+    img_data_url = f"data:image/jpeg;base64,{img_base64}"
+
+    url = "https://ark.cn-beijing.volces.com/api/v3/images/generations"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
+    }
+    data = {
+        "model": "doubao-seedream-5-0-260128",
+        "prompt": f"高质量公寓室内照片，充足的自然光线，明亮通透，高曝光，{requirements}，专业摄影，清晰锐利，小红书风格",
+        "image": img_data_url,
+        "response_format": "url",
+        "size": "2K"
+    }
+
+    resp = requests.post(url, headers=headers, json=data, timeout=60)
+    if resp.status_code != 200:
+        raise Exception(f"API错误：{resp.status_code} {resp.text}")
+
+    result = resp.json()
+    if "data" in result and len(result["data"]) > 0:
+        return result["data"][0]["url"]
+    else:
+        raise Exception("生成失败：返回数据格式错误")
+
+def volcengine_style_transfer(source_img: Image.Image, reference_img: Image.Image, api_key: str) -> str:
+    """火山引擎 AI 风格模仿"""
+    if not api_key:
+        raise Exception("火山引擎 API Key 未配置")
+
+    # 将两张图片都转换为base64
+    source_buffer = io.BytesIO()
+    source_img.save(source_buffer, format="JPEG")
+    source_base64 = base64.b64encode(source_buffer.getvalue()).decode()
+    source_data_url = f"data:image/jpeg;base64,{source_base64}"
+
+    ref_buffer = io.BytesIO()
+    reference_img.save(ref_buffer, format="JPEG")
+    ref_base64 = base64.b64encode(ref_buffer.getvalue()).decode()
+    ref_data_url = f"data:image/jpeg;base64,{ref_base64}"
+
+    url = "https://ark.cn-beijing.volces.com/api/v3/images/generations"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
+    }
+    data = {
+        "model": "doubao-seedream-5-0-260128",
+        "prompt": "将图1的风格、色调、光线和氛围转换为图2的风格，保持图1的主体内容和构图",
+        "image": [source_data_url, ref_data_url],
+        "sequential_image_generation": "disabled",
+        "response_format": "url",
+        "size": "2K"
+    }
+
+    resp = requests.post(url, headers=headers, json=data, timeout=60)
+    if resp.status_code != 200:
+        raise Exception(f"API错误：{resp.status_code} {resp.text}")
+
+    result = resp.json()
+    if "data" in result and len(result["data"]) > 0:
+        return result["data"][0]["url"]
+    else:
+        raise Exception("生成失败：返回数据格式错误")
+
+# ── AI 图片生成函数（Replicate）──────────────────────────────
+def ai_enhance_image(img: Image.Image, requirements: str, token: str) -> str:
+    """AI 图片优化增强"""
+    if not token:
+        raise Exception("Replicate API Token 未配置")
+
+    # 调试：打印 token 前几位
+    print(f"DEBUG: Token 前10位: {token[:10] if len(token) > 10 else token}")
+
+    os.environ["REPLICATE_API_TOKEN"] = token
+    img_data = io.BytesIO()
+    img.save(img_data, format="JPEG")
+    img_data.seek(0)
+
+    prompt = f"高质量公寓室内照片，{requirements}，专业摄影，明亮清晰，小红书风格"
+
+    output = replicate.run(
+        "black-forest-labs/flux-2-pro",
+        input={
+            "prompt": prompt,
+            "image": img_data,
+            "strength": 0.35,
+            "num_outputs": 1
+        }
+    )
+    return str(output) if output else None
+
+def ai_generate_from_text(description: str, token: str) -> str:
+    """AI 文字生成图片"""
+    if not token:
+        raise Exception("Replicate API Token 未配置")
+
+    os.environ["REPLICATE_API_TOKEN"] = token
+    prompt = f"高质量公寓室内照片，{description}，专业摄影，明亮清晰，小红书风格，真实感"
+
+    output = replicate.run(
+        "black-forest-labs/flux-2-pro",
+        input={
+            "prompt": prompt,
+            "num_outputs": 1,
+            "aspect_ratio": "3:4"
+        }
+    )
+    return str(output) if output else None
+
+def ai_style_transfer(source_img: Image.Image, reference_img: Image.Image, token: str) -> str:
+    """AI 风格模仿"""
+    if not token:
+        raise Exception("Replicate API Token 未配置")
+
+    os.environ["REPLICATE_API_TOKEN"] = token
+
+    source_data = io.BytesIO()
+    source_img.save(source_data, format="JPEG")
+    source_data.seek(0)
+
+    prompt = "模仿参考图的风格、色调、光线和氛围，保持原图的主体内容，高质量专业摄影"
+
+    output = replicate.run(
+        "black-forest-labs/flux-2-pro",
+        input={
+            "prompt": prompt,
+            "image": source_data,
+            "strength": 0.4,
+            "num_outputs": 1
+        }
+    )
+    return str(output) if output else None
+
 # ── 主布局（标签页切换）────────────────────────────────────────
 tab_copy, tab_image = st.tabs(["✍️ 文案工具", "🎨 图片美化"])
 
@@ -816,95 +990,260 @@ with tab_image:
     st.markdown('<div style="font-size:13px;color:#888;margin-bottom:16px;">上传公寓或生活照片，一键美化成小红书风格，并自动生成配套文案。</div>',
                 unsafe_allow_html=True)
 
+    # 模式选择
+    st.markdown('<div class="sec-label">选择美化模式</div>', unsafe_allow_html=True)
+    mode = st.radio(
+        "",
+        ["🎨 传统美化（滤镜+装饰）", "🤖 AI 图片优化", "✨ AI 文字生成图片", "🎭 AI 风格模仿"],
+        horizontal=True,
+        label_visibility="collapsed",
+        key="beautify_mode"
+    )
+
+    st.markdown("<hr style='border-color:#F0E0E3;margin:14px 0'>", unsafe_allow_html=True)
+
     img_left, img_right = st.columns([1, 1.2], gap="large")
 
     with img_left:
-        st.markdown('<div class="sec-label">📷 上传照片</div>', unsafe_allow_html=True)
-        uploaded_file = st.file_uploader(
-            "", type=["jpg", "jpeg", "png"],
-            label_visibility="collapsed",
-            key="img_upload"
-        )
-
-        if uploaded_file:
-            original_img = Image.open(uploaded_file)
-            st.image(original_img, caption="原图", use_container_width=True)
-
-            st.markdown("<hr style='border-color:#F0E0E3;margin:14px 0'>", unsafe_allow_html=True)
-            st.markdown('<div class="sec-label">🎨 选择美化风格</div>', unsafe_allow_html=True)
-
-            style_info = {
-                "小清新": "清透自然，色彩淡雅，适合室内/生活场景",
-                "温暖橙": "暖色调，温馨舒适，适合居家/傍晚场景",
-                "复古胶片": "低饱和，复古质感，适合文艺风格",
-                "明亮通透": "高亮高对比，清晰锐利，适合空间展示",
-            }
-
-            style_cols = st.columns(2)
-            for i, (s, desc) in enumerate(style_info.items()):
-                with style_cols[i % 2]:
-                    st.markdown(f"""
-                    <div style="background:#FFF0F2;border:1.5px solid #FFD0D8;border-radius:10px;
-                    padding:10px 12px;margin-bottom:8px;">
-                      <div style="font-size:13px;font-weight:700;color:#FF2442;">{s}</div>
-                      <div style="font-size:11px;color:#888;margin-top:3px;">{desc}</div>
-                    </div>""", unsafe_allow_html=True)
-
-            img_style = st.radio(
-                "选择风格",
-                list(style_info.keys()),
-                horizontal=True,
+        # ═══ 传统美化模式 ═══
+        if mode == "🎨 传统美化（滤镜+装饰）":
+            st.markdown('<div class="sec-label">📷 上传照片</div>', unsafe_allow_html=True)
+            uploaded_file = st.file_uploader(
+                "", type=["jpg", "jpeg", "png"],
                 label_visibility="collapsed",
-                key="img_style"
+                key="img_upload"
             )
 
-            st.markdown("<hr style='border-color:#F0E0E3;margin:14px 0'>", unsafe_allow_html=True)
-            st.markdown('<div class="sec-label">✨ 装饰效果（可多选）</div>', unsafe_allow_html=True)
+            if uploaded_file:
+                original_img = Image.open(uploaded_file)
+                st.image(original_img, caption="原图", use_container_width=True)
 
-            deco_options = st.multiselect(
+                st.markdown("<hr style='border-color:#F0E0E3;margin:14px 0'>", unsafe_allow_html=True)
+                st.markdown('<div class="sec-label">🎨 选择美化风格</div>', unsafe_allow_html=True)
+
+                style_info = {
+                    "小清新": "清透自然，色彩淡雅，适合室内/生活场景",
+                    "温暖橙": "暖色调，温馨舒适，适合居家/傍晚场景",
+                    "复古胶片": "低饱和，复古质感，适合文艺风格",
+                    "明亮通透": "高亮高对比，清晰锐利，适合空间展示",
+                }
+
+                style_cols = st.columns(2)
+                for i, (s, desc) in enumerate(style_info.items()):
+                    with style_cols[i % 2]:
+                        st.markdown(f"""
+                        <div style="background:#FFF0F2;border:1.5px solid #FFD0D8;border-radius:10px;
+                        padding:10px 12px;margin-bottom:8px;">
+                          <div style="font-size:13px;font-weight:700;color:#FF2442;">{s}</div>
+                          <div style="font-size:11px;color:#888;margin-top:3px;">{desc}</div>
+                        </div>""", unsafe_allow_html=True)
+
+                img_style = st.radio(
+                    "选择风格",
+                    list(style_info.keys()),
+                    horizontal=True,
+                    label_visibility="collapsed",
+                    key="img_style"
+                )
+
+                st.markdown("<hr style='border-color:#F0E0E3;margin:14px 0'>", unsafe_allow_html=True)
+                st.markdown('<div class="sec-label">✨ 装饰效果（可多选）</div>', unsafe_allow_html=True)
+
+                deco_options = st.multiselect(
+                    "",
+                    ["📸 宝丽来边框", "🏷️ 信息贴纸", "✏️ 手绘涂鸦", "📰 杂志排版"],
+                    default=[],
+                    label_visibility="collapsed",
+                    key="deco_options"
+                )
+
+                st.markdown("<hr style='border-color:#F0E0E3;margin:14px 0'>", unsafe_allow_html=True)
+
+                gen_caption = st.checkbox("✍️ 同时生成配套文案", value=True, key="gen_caption")
+
+                if st.button("✨ 一键美化", use_container_width=True, type="primary"):
+                    with st.spinner("🎨 图片美化中，请稍候…"):
+                        beautified = beautify_image(original_img, img_style)
+
+                        # 应用装饰效果
+                        if "📸 宝丽来边框" in deco_options:
+                            beautified = add_polaroid_frame(beautified)
+                        if "🏷️ 信息贴纸" in deco_options:
+                            beautified = add_info_stickers(beautified)
+                        if "✏️ 手绘涂鸦" in deco_options:
+                            beautified = add_hand_drawn_doodles(beautified)
+                        if "📰 杂志排版" in deco_options:
+                            beautified = add_magazine_bar(beautified)
+
+                        st.session_state["beautified_img"] = beautified
+                        st.session_state["beautified_style"] = img_style
+
+                    if gen_caption and API_KEY:
+                        with st.spinner("✍️ AI 生成文案中…"):
+                            try:
+                                caption = generate_image_caption(beautified, img_style, API_KEY, API_URL)
+                                st.session_state["img_caption"] = caption
+                            except Exception as e:
+                                st.session_state["img_caption"] = ""
+                                st.warning(f"文案生成失败：{e}")
+                    elif gen_caption and not API_KEY:
+                        st.warning("API Key 未配置，跳过文案生成")
+
+                    st.rerun()
+
+        # ═══ AI 图片优化模式 ═══
+        elif mode == "🤖 AI 图片优化":
+            st.markdown('<div class="sec-label">📷 上传照片</div>', unsafe_allow_html=True)
+            uploaded_file = st.file_uploader(
+                "", type=["jpg", "jpeg", "png"],
+                label_visibility="collapsed",
+                key="ai_opt_upload"
+            )
+
+            if uploaded_file:
+                original_img = Image.open(uploaded_file)
+                st.image(original_img, caption="原图", use_container_width=True)
+
+                st.markdown("<hr style='border-color:#F0E0E3;margin:14px 0'>", unsafe_allow_html=True)
+                st.markdown('<div class="sec-label">✍️ 优化要求</div>', unsafe_allow_html=True)
+
+                requirements = st.text_area(
+                    "",
+                    placeholder="例如：让房间更明亮温馨，增强阳光感，突出空间感...",
+                    height=100,
+                    label_visibility="collapsed",
+                    key="ai_requirements"
+                )
+
+                if st.button("🤖 AI 优化图片", use_container_width=True, type="primary"):
+                    if not VOLCENGINE_API_KEY:
+                        st.error("火山引擎 API Key 未配置")
+                    elif not requirements.strip():
+                        st.warning("请填写优化要求")
+                    else:
+                        with st.spinner("🤖 AI 正在优化图片，请稍候（约10-30秒）..."):
+                            try:
+                                img_url = volcengine_enhance_image(original_img, requirements, VOLCENGINE_API_KEY)
+                                if img_url:
+                                    st.session_state["ai_result_url"] = img_url
+                                    st.session_state["ai_mode"] = "优化"
+                                    st.rerun()
+                                else:
+                                    st.error("AI 生成失败，请重试")
+                            except Exception as e:
+                                st.error(f"AI 生成失败：{e}")
+
+        # ═══ AI 文字生成图片模式 ═══
+        elif mode == "✨ AI 文字生成图片":
+            st.markdown('<div class="sec-label">✍️ 描述你想要的图片</div>', unsafe_allow_html=True)
+
+            description = st.text_area(
                 "",
-                ["📸 宝丽来边框", "🏷️ 信息贴纸", "✏️ 手绘涂鸦", "📰 杂志排版"],
-                default=[],
+                placeholder="例如：一个温馨的单间公寓，阳光从窗户洒进来，现代简约风格，有床、书桌和小沙发...",
+                height=150,
                 label_visibility="collapsed",
-                key="deco_options"
+                key="ai_description"
             )
 
             st.markdown("<hr style='border-color:#F0E0E3;margin:14px 0'>", unsafe_allow_html=True)
+            st.markdown('<div style="font-size:12px;color:#888;line-height:1.6;">💡 提示：描述越详细，生成效果越好。可以包含：房间类型、光线、色调、家具、氛围等。</div>', unsafe_allow_html=True)
 
-            gen_caption = st.checkbox("✍️ 同时生成配套文案", value=True, key="gen_caption")
-
-            if st.button("✨ 一键美化", use_container_width=True, type="primary"):
-                with st.spinner("🎨 图片美化中，请稍候…"):
-                    beautified = beautify_image(original_img, img_style)
-
-                    # 应用装饰效果
-                    if "📸 宝丽来边框" in deco_options:
-                        beautified = add_polaroid_frame(beautified)
-                    if "🏷️ 信息贴纸" in deco_options:
-                        beautified = add_info_stickers(beautified)
-                    if "✏️ 手绘涂鸦" in deco_options:
-                        beautified = add_hand_drawn_doodles(beautified)
-                    if "📰 杂志排版" in deco_options:
-                        beautified = add_magazine_bar(beautified)
-
-                    st.session_state["beautified_img"] = beautified
-                    st.session_state["beautified_style"] = img_style
-
-                if gen_caption and API_KEY:
-                    with st.spinner("✍️ AI 生成文案中…"):
+            if st.button("✨ AI 生成图片", use_container_width=True, type="primary"):
+                if not VOLCENGINE_API_KEY:
+                    st.error("火山引擎 API Key 未配置")
+                elif not description.strip():
+                    st.warning("请填写图片描述")
+                else:
+                    with st.spinner("✨ AI 正在生成图片，请稍候（约10-30秒）..."):
                         try:
-                            caption = generate_image_caption(beautified, img_style, API_KEY, API_URL)
-                            st.session_state["img_caption"] = caption
+                            img_url = volcengine_generate_from_text(description, VOLCENGINE_API_KEY)
+                            if img_url:
+                                st.session_state["ai_result_url"] = img_url
+                                st.session_state["ai_mode"] = "生成"
+                                st.rerun()
+                            else:
+                                st.error("AI 生成失败，请重试")
                         except Exception as e:
-                            st.session_state["img_caption"] = ""
-                            st.warning(f"文案生成失败：{e}")
-                elif gen_caption and not API_KEY:
-                    st.warning("API Key 未配置，跳过文案生成")
+                            st.error(f"AI 生成失败：{e}")
 
-                st.rerun()
+        # ═══ AI 风格模仿模式 ═══
+        elif mode == "🎭 AI 风格模仿":
+            st.markdown('<div class="sec-label">📷 上传原图</div>', unsafe_allow_html=True)
+            source_file = st.file_uploader(
+                "", type=["jpg", "jpeg", "png"],
+                label_visibility="collapsed",
+                key="ai_source_upload"
+            )
+
+            if source_file:
+                source_img = Image.open(source_file)
+                st.image(source_img, caption="原图", use_container_width=True)
+
+            st.markdown("<hr style='border-color:#F0E0E3;margin:14px 0'>", unsafe_allow_html=True)
+            st.markdown('<div class="sec-label">🎨 上传参考风格图</div>', unsafe_allow_html=True)
+
+            reference_file = st.file_uploader(
+                "", type=["jpg", "jpeg", "png"],
+                label_visibility="collapsed",
+                key="ai_reference_upload"
+            )
+
+            if reference_file:
+                reference_img = Image.open(reference_file)
+                st.image(reference_img, caption="参考风格", use_container_width=True)
+
+            st.markdown("<hr style='border-color:#F0E0E3;margin:14px 0'>", unsafe_allow_html=True)
+            st.markdown('<div style="font-size:12px;color:#888;line-height:1.6;">💡 提示：AI 会模仿参考图的色调、光线和氛围，应用到原图上。</div>', unsafe_allow_html=True)
+
+            if st.button("🎭 AI 风格转换", use_container_width=True, type="primary"):
+                if not VOLCENGINE_API_KEY:
+                    st.error("火山引擎 API Key 未配置")
+                elif not source_file:
+                    st.warning("请上传原图")
+                elif not reference_file:
+                    st.warning("请上传参考风格图")
+                else:
+                    with st.spinner("🎭 AI 正在转换风格，请稍候（约10-30秒）..."):
+                        try:
+                            img_url = volcengine_style_transfer(source_img, reference_img, VOLCENGINE_API_KEY)
+                            if img_url:
+                                st.session_state["ai_result_url"] = img_url
+                                st.session_state["ai_mode"] = "风格转换"
+                                st.rerun()
+                            else:
+                                st.error("AI 生成失败，请重试")
+                        except Exception as e:
+                            st.error(f"AI 生成失败：{e}")
 
     with img_right:
-        if "beautified_img" in st.session_state and st.session_state["beautified_img"] is not None:
+        # 显示 AI 生成结果
+        if "ai_result_url" in st.session_state and st.session_state["ai_result_url"]:
+            ai_mode = st.session_state.get("ai_mode", "AI")
+            st.markdown(f'<div class="sec-label">✅ {ai_mode}结果</div>', unsafe_allow_html=True)
+
+            try:
+                import requests
+                response = requests.get(st.session_state["ai_result_url"])
+                ai_img = Image.open(io.BytesIO(response.content))
+                st.image(ai_img, use_container_width=True)
+
+                img_bytes = image_to_bytes(ai_img)
+                c1, c2 = st.columns(2)
+                c1.download_button(
+                    "📥 下载图片",
+                    data=img_bytes,
+                    file_name=f"嘛嘛公寓_AI{ai_mode}.jpg",
+                    mime="image/jpeg",
+                    use_container_width=True
+                )
+                if c2.button("🔄 重新生成", use_container_width=True, key="regen_ai"):
+                    st.session_state["ai_result_url"] = None
+                    st.rerun()
+            except Exception as e:
+                st.error(f"图片加载失败：{e}")
+
+        # 显示传统美化结果
+        elif "beautified_img" in st.session_state and st.session_state["beautified_img"] is not None:
             st.markdown(f'<div class="sec-label">✅ 美化结果 · {st.session_state.get("beautified_style","")}</div>',
                         unsafe_allow_html=True)
             st.image(st.session_state["beautified_img"], use_container_width=True)
