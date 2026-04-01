@@ -4,7 +4,6 @@ import json
 import os
 import base64
 import io
-import replicate
 from datetime import datetime
 from PIL import Image, ImageEnhance, ImageFilter, ImageDraw, ImageFont
 
@@ -655,75 +654,6 @@ def volcengine_style_transfer(source_img: Image.Image, reference_img: Image.Imag
         return result["data"][0]["url"]
     else:
         raise Exception("生成失败：返回数据格式错误")
-
-# ── AI 图片生成函数（Replicate）──────────────────────────────
-def ai_enhance_image(img: Image.Image, requirements: str, token: str) -> str:
-    """AI 图片优化增强"""
-    if not token:
-        raise Exception("Replicate API Token 未配置")
-
-    # 调试：打印 token 前几位
-    print(f"DEBUG: Token 前10位: {token[:10] if len(token) > 10 else token}")
-
-    os.environ["REPLICATE_API_TOKEN"] = token
-    img_data = io.BytesIO()
-    img.save(img_data, format="JPEG")
-    img_data.seek(0)
-
-    prompt = f"高质量公寓室内照片，{requirements}，专业摄影，明亮清晰，小红书风格"
-
-    output = replicate.run(
-        "black-forest-labs/flux-2-pro",
-        input={
-            "prompt": prompt,
-            "image": img_data,
-            "strength": 0.35,
-            "num_outputs": 1
-        }
-    )
-    return str(output) if output else None
-
-def ai_generate_from_text(description: str, token: str) -> str:
-    """AI 文字生成图片"""
-    if not token:
-        raise Exception("Replicate API Token 未配置")
-
-    os.environ["REPLICATE_API_TOKEN"] = token
-    prompt = f"高质量公寓室内照片，{description}，专业摄影，明亮清晰，小红书风格，真实感"
-
-    output = replicate.run(
-        "black-forest-labs/flux-2-pro",
-        input={
-            "prompt": prompt,
-            "num_outputs": 1,
-            "aspect_ratio": "3:4"
-        }
-    )
-    return str(output) if output else None
-
-def ai_style_transfer(source_img: Image.Image, reference_img: Image.Image, token: str) -> str:
-    """AI 风格模仿"""
-    if not token:
-        raise Exception("Replicate API Token 未配置")
-
-    os.environ["REPLICATE_API_TOKEN"] = token
-
-    source_data = io.BytesIO()
-    source_img.save(source_data, format="JPEG")
-    source_data.seek(0)
-
-    prompt = "模仿参考图的风格、色调、光线和氛围，保持原图的主体内容，高质量专业摄影"
-
-    output = replicate.run(
-        "black-forest-labs/flux-2-pro",
-        input={
-            "prompt": prompt,
-            "image": source_data,
-            "strength": 0.4,
-            "num_outputs": 1
-        }
-    )
-    return str(output) if output else None
 
 # ── 主布局（标签页切换）────────────────────────────────────────
 tab_copy, tab_image = st.tabs(["✍️ 文案工具", "🎨 图片美化"])
