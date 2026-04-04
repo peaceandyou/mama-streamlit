@@ -313,7 +313,7 @@ def update_hot_topics():
         resp = requests.post(
             f"{API_URL}/v1/chat/completions",
             headers={"Authorization": f"Bearer {API_KEY}", "content-type": "application/json"},
-            json={"model": "gpt-5", "max_tokens": 2048,
+            json={"model": "claude-sonnet-4-6", "max_tokens": 2048,
                   "messages": [{"role": "user", "content": prompt}]},
             timeout=60,
         )
@@ -856,7 +856,7 @@ with right:
                     resp = requests.post(
                         f"{API_URL}/v1/chat/completions",
                         headers={"Authorization": f"Bearer {API_KEY}", "content-type": "application/json"},
-                        json={"model": "gpt-5", "max_tokens": 1024, "stream": True,
+                        json={"model": "claude-sonnet-4-6", "max_tokens": 1024, "stream": True,
                               "messages": [{"role": "user", "content": prompt}]},
                         stream=True, timeout=120,
                     )
