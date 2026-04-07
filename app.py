@@ -553,6 +553,32 @@ def generate_image_caption(img: Image.Image, style: str, api_key: str, api_url: 
         raise Exception(f"API错误：{resp.status_code}")
     return resp.json()["choices"][0]["message"]["content"]
 
+# ── 提示词优化函数 ────────────────────────────────────────────
+def optimize_image_prompt(user_input: str, scene_type: str, api_key: str, api_url: str) -> str:
+    """用 Claude 把用户简单描述优化成专业图片生成提示词"""
+    prompt = f"""你是专业的AI图片生成提示词工程师，专注于室内设计和公寓摄影风格。
+
+用户想生成一张图片，场景类型：{scene_type}
+用户的简单描述：{user_input}
+
+请将用户描述扩写成高质量的图片生成提示词，要求：
+1. 保留用户的核心意图
+2. 补充专业摄影参数（光线、角度、色调等）
+3. 加入小红书爆款风格描述
+4. 适合公寓/室内场景
+5. 只输出优化后的提示词，不加任何解释，不超过100字"""
+
+    resp = requests.post(
+        f"{api_url}/v1/chat/completions",
+        headers={"Authorization": f"Bearer {api_key}", "content-type": "application/json"},
+        json={"model": "claude-sonnet-4-6", "max_tokens": 256,
+              "messages": [{"role": "user", "content": prompt}]},
+        timeout=30,
+    )
+    if resp.status_code == 200:
+        return resp.json()["choices"][0]["message"]["content"].strip()
+    return user_input  # 失败时返回原始输入
+
 # ── AI 图片生成函数（火山引擎）──────────────────────────────
 def volcengine_generate_from_text(description: str, api_key: str) -> str:
     """火山引擎 AI 文字生成图片"""
@@ -1055,7 +1081,11 @@ with tab_image:
                     else:
                         with st.spinner("🤖 AI 正在优化图片，请稍候（约10-30秒）..."):
                             try:
-                                img_url = volcengine_enhance_image(original_img, requirements, VOLCENGINE_API_KEY)
+                                if API_KEY:
+                                    optimized_req = optimize_image_prompt(requirements, "公寓图片优化", API_KEY, API_URL)
+                                else:
+                                    optimized_req = requirements
+                                img_url = volcengine_enhance_image(original_img, optimized_req, VOLCENGINE_API_KEY)
                                 if img_url:
                                     st.session_state["ai_result_url"] = img_url
                                     st.session_state["ai_mode"] = "优化"
@@ -1088,7 +1118,11 @@ with tab_image:
                 else:
                     with st.spinner("✨ AI 正在生成图片，请稍候（约10-30秒）..."):
                         try:
-                            img_url = volcengine_generate_from_text(description, VOLCENGINE_API_KEY)
+                            if API_KEY:
+                                optimized = optimize_image_prompt(description, "文字生成公寓图片", API_KEY, API_URL)
+                            else:
+                                optimized = description
+                            img_url = volcengine_generate_from_text(optimized, VOLCENGINE_API_KEY)
                             if img_url:
                                 st.session_state["ai_result_url"] = img_url
                                 st.session_state["ai_mode"] = "生成"
