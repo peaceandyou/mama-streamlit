@@ -595,6 +595,7 @@ def volcengine_generate_from_text(description: str, api_key: str) -> str:
     }
     data = {
         "model": "doubao-seedream-5-0-260128",
+        "prompt": description,
         "response_format": "url",
         "size": "2K"
     }
