@@ -568,15 +568,18 @@ def optimize_image_prompt(user_input: str, scene_type: str, api_key: str, api_ur
 4. 适合公寓/室内场景
 5. 只输出优化后的提示词，不加任何解释，不超过100字"""
 
-    resp = requests.post(
-        f"{api_url}/v1/chat/completions",
-        headers={"Authorization": f"Bearer {api_key}", "content-type": "application/json"},
-        json={"model": "claude-sonnet-4-6", "max_tokens": 256,
-              "messages": [{"role": "user", "content": prompt}]},
-        timeout=30,
-    )
-    if resp.status_code == 200:
-        return resp.json()["choices"][0]["message"]["content"].strip()
+    try:
+        resp = requests.post(
+            f"{api_url}/v1/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}", "content-type": "application/json"},
+            json={"model": "claude-sonnet-4-6", "max_tokens": 256,
+                  "messages": [{"role": "user", "content": prompt}]},
+            timeout=30,
+        )
+        if resp.status_code == 200:
+            return resp.json()["choices"][0]["message"]["content"].strip()
+    except Exception:
+        pass
     return user_input  # 失败时返回原始输入
 
 # ── AI 图片生成函数（火山引擎）──────────────────────────────
