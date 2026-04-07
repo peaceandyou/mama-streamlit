@@ -594,8 +594,7 @@ def volcengine_generate_from_text(description: str, api_key: str) -> str:
         "Authorization": f"Bearer {api_key}"
     }
     data = {
-        "model": "doubao-seedream-5.0-260128",
-        "prompt": f"高质量公寓室内照片，{description}，专业摄影，明亮清晰，小红书风格，真实感",
+        "model": "doubao-seedream-5-0-260128",
         "response_format": "url",
         "size": "2K"
     }
@@ -628,7 +627,7 @@ def volcengine_enhance_image(img: Image.Image, requirements: str, api_key: str) 
     }
     data = {
         "model": "doubao-seedream-5-0-260128",
-        "prompt": f"高质量公寓室内照片，充足的自然光线，明亮通透，高曝光，{requirements}，专业摄影，清晰锐利，小红书风格",
+        "prompt": requirements,
         "image": img_data_url,
         "response_format": "url",
         "size": "2K"
@@ -667,7 +666,6 @@ def volcengine_style_transfer(source_img: Image.Image, reference_img: Image.Imag
     }
     data = {
         "model": "doubao-seedream-5-0-260128",
-        "prompt": "将图1的风格、色调、光线和氛围转换为图2的风格，保持图1的主体内容和构图",
         "image": [source_data_url, ref_data_url],
         "sequential_image_generation": "disabled",
         "response_format": "url",
