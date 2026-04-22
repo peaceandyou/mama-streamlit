@@ -598,6 +598,7 @@ def volcengine_generate_from_text(description: str, api_key: str) -> str:
         "model": "doubao-seedream-5-0-260128",
         "prompt": description,
         "response_format": "url",
+        "watermark": False,
         "size": "2K"
     }
 
@@ -671,6 +672,7 @@ def volcengine_style_transfer(source_img: Image.Image, reference_img: Image.Imag
         "image": [source_data_url, ref_data_url],
         "sequential_image_generation": "disabled",
         "response_format": "url",
+        "watermark": False,
         "size": "2K"
     }
 
