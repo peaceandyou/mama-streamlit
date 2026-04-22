@@ -633,6 +633,7 @@ def volcengine_enhance_image(img: Image.Image, requirements: str, api_key: str, 
         "prompt": requirements,
         "image": img_data_url,
         "response_format": "url",
+        "watermark": False,
         "size": size
     }
 
