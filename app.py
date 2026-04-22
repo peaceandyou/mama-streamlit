@@ -601,7 +601,7 @@ def volcengine_generate_from_text(description: str, api_key: str) -> str:
         "size": "2K"
     }
 
-    resp = requests.post(url, headers=headers, json=data, timeout=60)
+    resp = requests.post(url, headers=headers, json=data, timeout=120)
     if resp.status_code != 200:
         raise Exception(f"API错误：{resp.status_code} {resp.text}")
 
@@ -635,7 +635,7 @@ def volcengine_enhance_image(img: Image.Image, requirements: str, api_key: str, 
         "size": size
     }
 
-    resp = requests.post(url, headers=headers, json=data, timeout=60)
+    resp = requests.post(url, headers=headers, json=data, timeout=120)
     if resp.status_code != 200:
         raise Exception(f"API错误：{resp.status_code} {resp.text}")
 
@@ -674,9 +674,7 @@ def volcengine_style_transfer(source_img: Image.Image, reference_img: Image.Imag
         "size": "2K"
     }
 
-    resp = requests.post(url, headers=headers, json=data, timeout=60)
-    if resp.status_code != 200:
-        raise Exception(f"API错误：{resp.status_code} {resp.text}")
+    resp = requests.post(url, headers=headers, json=data, timeout=120)
 
     result = resp.json()
     if "data" in result and len(result["data"]) > 0:
