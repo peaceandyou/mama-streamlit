@@ -273,7 +273,8 @@ def save_topics(topics, updated_at):
 # ── Session State ─────────────────────────────────────────────
 for k, v in [("selected_topic",""), ("post_type","grass"),
              ("tone","轻松日常"), ("generated_post",""),
-             ("hot_topics", None), ("hot_topics_updated_at", None)]:
+             ("hot_topics", None), ("hot_topics_updated_at", None),
+             ("pub_imgs", None), ("pub_caption", "")]:
     if k not in st.session_state:
         st.session_state[k] = v
 
@@ -684,7 +685,7 @@ def volcengine_style_transfer(source_img: Image.Image, reference_img: Image.Imag
         raise Exception("生成失败：返回数据格式错误")
 
 # ── 主布局（标签页切换）────────────────────────────────────────
-tab_copy, tab_image = st.tabs(["✍️ 文案工具", "🎨 图片美化"])
+tab_copy, tab_image, tab_publish = st.tabs(["✍️ 文案工具", "🎨 图片美化", "🚀 一键发布"])
 
 # ══ 文案工具 ══════════════════════════════════════════════════
 with tab_copy:
@@ -1259,4 +1260,123 @@ with tab_image:
             border:2px dashed #FFD0D8;">
               <div style="font-size:40px;">🖼️</div>
               <div style="font-size:14px;color:#bbb;">上传图片后，美化结果会显示在这里</div>
+            </div>""", unsafe_allow_html=True)
+
+# ══ 一键发布 ══════════════════════════════════════════════════
+with tab_publish:
+    st.markdown('<div class="card-title" style="margin-top:8px;">🚀 一键发布工具</div>', unsafe_allow_html=True)
+    st.markdown('<div style="font-size:13px;color:#888;margin-bottom:16px;">上传多张图片，AI 自动优化每张图片并生成一段配套文案。</div>', unsafe_allow_html=True)
+
+    pub_left, pub_right = st.columns([1, 1.2], gap="large")
+
+    with pub_left:
+        st.markdown('<div class="sec-label">📷 上传图片（可多张）</div>', unsafe_allow_html=True)
+        pub_files = st.file_uploader(
+            "", type=["jpg", "jpeg", "png"],
+            accept_multiple_files=True,
+            label_visibility="collapsed",
+            key="pub_upload"
+        )
+
+        if pub_files:
+            st.markdown(f'<div style="font-size:12px;color:#FF2442;margin-bottom:8px;">已上传 {len(pub_files)} 张图片</div>', unsafe_allow_html=True)
+            cols = st.columns(min(len(pub_files), 3))
+            for i, f in enumerate(pub_files):
+                cols[i % 3].image(Image.open(f), use_container_width=True)
+
+        st.markdown("<hr style='border-color:#F0E0E3;margin:14px 0'>", unsafe_allow_html=True)
+        st.markdown('<div class="sec-label">💬 补充说明（选填）</div>', unsafe_allow_html=True)
+        pub_note = st.text_area("", placeholder="例如：这是客厅和卧室，想突出采光好、空间大...", height=80, label_visibility="collapsed", key="pub_note")
+
+        if st.button("🚀 一键生成", use_container_width=True, type="primary", key="pub_btn"):
+            if not pub_files:
+                st.warning("请先上传图片")
+            elif not VOLCENGINE_API_KEY:
+                st.error("火山引擎 API Key 未配置")
+            elif not API_KEY:
+                st.error("API Key 未配置")
+            else:
+                optimized_imgs = []
+                optimized_urls = []
+
+                with st.spinner(f"🤖 AI 正在优化 {len(pub_files)} 张图片..."):
+                    for f in pub_files:
+                        try:
+                            img = Image.open(f)
+                            opt_prompt = optimize_image_prompt("公寓室内照片，明亮通透，小红书风格", "公寓图片优化", API_KEY, API_URL)
+                            url = volcengine_enhance_image(img, opt_prompt, VOLCENGINE_API_KEY)
+                            optimized_urls.append(url)
+                            resp_img = requests.get(url)
+                            optimized_imgs.append(Image.open(io.BytesIO(resp_img.content)))
+                        except Exception as e:
+                            st.warning(f"第 {len(optimized_imgs)+1} 张图优化失败，使用原图：{e}")
+                            optimized_imgs.append(Image.open(f))
+                            optimized_urls.append(None)
+
+                st.session_state["pub_imgs"] = optimized_imgs
+                st.session_state["pub_urls"] = optimized_urls
+
+                with st.spinner("✍️ AI 正在生成文案..."):
+                    try:
+                        img_desc = f"共 {len(pub_files)} 张图片，分别是公寓的不同角度和空间"
+                        note_part = f"\n运营者补充：{pub_note.strip()}" if pub_note.strip() else ""
+                        prompt = f"""你是专业的小红书文案运营，为「重庆嘛嘛公寓」写一篇图文帖子。
+
+公寓信息：月租999元起，熙街商圈地铁站旁，20-30㎡精装单间/复式，零中介费，灵活租期，月付，面向外来青年和应届毕业生。
+
+本次上传了 {len(pub_files)} 张图片（{img_desc}）。{note_part}
+
+要求：
+- 第一人称，真实自然，200-300字
+- 文案结尾注明「图片说明：图1 xxx，图2 xxx...」（根据图片数量，简短描述每张图的内容）
+- 结尾带3-5个话题标签
+直接输出帖子内容，不加任何说明语。"""
+
+                        resp = requests.post(
+                            f"{API_URL}/v1/chat/completions",
+                            headers={"Authorization": f"Bearer {API_KEY}", "content-type": "application/json"},
+                            json={"model": "claude-sonnet-4-6", "max_tokens": 1024,
+                                  "messages": [{"role": "user", "content": prompt}]},
+                            timeout=60,
+                        )
+                        if resp.status_code == 200:
+                            st.session_state["pub_caption"] = resp.json()["choices"][0]["message"]["content"]
+                        else:
+                            st.error(f"文案生成失败：{resp.status_code}")
+                    except Exception as e:
+                        st.error(f"文案生成失败：{e}")
+
+                st.rerun()
+
+    with pub_right:
+        if st.session_state.get("pub_imgs"):
+            st.markdown('<div class="sec-label">✅ 优化后的图片</div>', unsafe_allow_html=True)
+            cols = st.columns(min(len(st.session_state["pub_imgs"]), 3))
+            for i, img in enumerate(st.session_state["pub_imgs"]):
+                with cols[i % 3]:
+                    st.image(img, caption=f"图{i+1}", use_container_width=True)
+                    img_bytes = image_to_bytes(img)
+                    st.download_button(f"📥 下载图{i+1}", data=img_bytes,
+                                       file_name=f"嘛嘛公寓_图{i+1}.jpg", mime="image/jpeg",
+                                       use_container_width=True, key=f"dl_pub_{i}")
+
+            if st.session_state.get("pub_caption"):
+                st.markdown("<hr style='border-color:#F0E0E3;margin:14px 0'>", unsafe_allow_html=True)
+                st.markdown('<div class="sec-label">✍️ 配套文案</div>', unsafe_allow_html=True)
+                caption_val = st.text_area("", value=st.session_state["pub_caption"],
+                                           height=280, label_visibility="collapsed", key="pub_caption_out")
+                c1, c2 = st.columns(2)
+                c1.download_button("📥 下载文案", data=caption_val,
+                                   file_name="一键发布文案.txt", mime="text/plain", use_container_width=True)
+                if c2.button("🔄 重新生成", use_container_width=True, key="pub_regen"):
+                    st.session_state["pub_imgs"] = None
+                    st.session_state["pub_caption"] = ""
+                    st.rerun()
+        else:
+            st.markdown("""
+            <div style="height:300px;display:flex;align-items:center;justify-content:center;
+            flex-direction:column;gap:12px;background:#FFF8F9;border-radius:16px;
+            border:2px dashed #FFD0D8;">
+              <div style="font-size:40px;">🚀</div>
+              <div style="font-size:14px;color:#bbb;">上传图片后点击「一键生成」</div>
             </div>""", unsafe_allow_html=True)
