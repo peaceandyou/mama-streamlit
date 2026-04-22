@@ -1085,10 +1085,7 @@ with tab_image:
                     key="ai_restrictions"
                 )
 
-                st.markdown('<div class="sec-label">📐 输出尺寸</div>', unsafe_allow_html=True)
-                img_size = st.radio("", ["3:4（小红书竖图）", "16:9（横图）"],
-                                    horizontal=True, label_visibility="collapsed", key="ai_size")
-                size_val = "3:4" if "3:4" in img_size else "16:9"
+                size_val = "2k"
 
                 if st.button("🤖 AI 优化图片", use_container_width=True, type="primary"):
                     if not VOLCENGINE_API_KEY:
@@ -1312,10 +1309,7 @@ with tab_publish:
             key="pub_restrictions"
         )
 
-        st.markdown('<div class="sec-label">📐 输出尺寸</div>', unsafe_allow_html=True)
-        pub_size = st.radio("", ["3:4（小红书竖图）", "16:9（横图）"],
-                            horizontal=True, label_visibility="collapsed", key="pub_size")
-        pub_size_val = "3:4" if "3:4" in pub_size else "16:9"
+        pub_size_val = "2k"
 
         if st.button("🚀 一键生成", use_container_width=True, type="primary", key="pub_btn"):
             if not pub_files:
