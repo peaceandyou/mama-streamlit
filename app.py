@@ -611,7 +611,7 @@ def volcengine_generate_from_text(description: str, api_key: str) -> str:
     else:
         raise Exception("生成失败：返回数据格式错误")
 
-def volcengine_enhance_image(img: Image.Image, requirements: str, api_key: str) -> str:
+def volcengine_enhance_image(img: Image.Image, requirements: str, api_key: str, size: str = "2K") -> str:
     """火山引擎 AI 图片优化"""
     if not api_key:
         raise Exception("火山引擎 API Key 未配置")
@@ -632,7 +632,7 @@ def volcengine_enhance_image(img: Image.Image, requirements: str, api_key: str) 
         "prompt": requirements,
         "image": img_data_url,
         "response_format": "url",
-        "size": "2K"
+        "size": size
     }
 
     resp = requests.post(url, headers=headers, json=data, timeout=60)
@@ -1071,10 +1071,24 @@ with tab_image:
                 requirements = st.text_area(
                     "",
                     placeholder="例如：让房间更明亮温馨，增强阳光感，突出空间感...",
-                    height=100,
+                    height=80,
                     label_visibility="collapsed",
                     key="ai_requirements"
                 )
+
+                st.markdown('<div class="sec-label">🔒 限制条件（防止AI乱改）</div>', unsafe_allow_html=True)
+                restrictions = st.text_area(
+                    "",
+                    value="严格保持原图的房间布局、家具摆放、装修风格、墙面颜色和所有物品不变，只允许调整光线亮度、色调氛围和画面清晰度",
+                    height=80,
+                    label_visibility="collapsed",
+                    key="ai_restrictions"
+                )
+
+                st.markdown('<div class="sec-label">📐 输出尺寸</div>', unsafe_allow_html=True)
+                img_size = st.radio("", ["3:4（小红书竖图）", "16:9（横图）"],
+                                    horizontal=True, label_visibility="collapsed", key="ai_size")
+                size_val = "3:4" if "3:4" in img_size else "16:9"
 
                 if st.button("🤖 AI 优化图片", use_container_width=True, type="primary"):
                     if not VOLCENGINE_API_KEY:
@@ -1084,11 +1098,12 @@ with tab_image:
                     else:
                         with st.spinner("🤖 AI 正在优化图片，请稍候（约10-30秒）..."):
                             try:
+                                full_req = f"{requirements.strip()}。{restrictions.strip()}"
                                 if API_KEY:
-                                    optimized_req = optimize_image_prompt(requirements, "公寓图片优化", API_KEY, API_URL)
+                                    optimized_req = optimize_image_prompt(full_req, "公寓图片优化", API_KEY, API_URL)
                                 else:
-                                    optimized_req = requirements
-                                img_url = volcengine_enhance_image(original_img, optimized_req, VOLCENGINE_API_KEY)
+                                    optimized_req = full_req
+                                img_url = volcengine_enhance_image(original_img, optimized_req, VOLCENGINE_API_KEY, size_val)
                                 if img_url:
                                     st.session_state["ai_result_url"] = img_url
                                     st.session_state["ai_mode"] = "优化"
