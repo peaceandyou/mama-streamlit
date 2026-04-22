@@ -1303,6 +1303,20 @@ with tab_publish:
         st.markdown('<div class="sec-label">💬 补充说明（选填）</div>', unsafe_allow_html=True)
         pub_note = st.text_area("", placeholder="例如：这是客厅和卧室，想突出采光好、空间大...", height=80, label_visibility="collapsed", key="pub_note")
 
+        st.markdown('<div class="sec-label">🔒 限制条件（防止AI乱改）</div>', unsafe_allow_html=True)
+        pub_restrictions = st.text_area(
+            "",
+            value="严格保持原图的房间布局、家具摆放、装修风格、墙面颜色和所有物品不变，只允许调整光线亮度、色调氛围和画面清晰度",
+            height=80,
+            label_visibility="collapsed",
+            key="pub_restrictions"
+        )
+
+        st.markdown('<div class="sec-label">📐 输出尺寸</div>', unsafe_allow_html=True)
+        pub_size = st.radio("", ["3:4（小红书竖图）", "16:9（横图）"],
+                            horizontal=True, label_visibility="collapsed", key="pub_size")
+        pub_size_val = "3:4" if "3:4" in pub_size else "16:9"
+
         if st.button("🚀 一键生成", use_container_width=True, type="primary", key="pub_btn"):
             if not pub_files:
                 st.warning("请先上传图片")
@@ -1318,8 +1332,8 @@ with tab_publish:
                     for f in pub_files:
                         try:
                             img = Image.open(f)
-                            opt_prompt = optimize_image_prompt("公寓室内照片，明亮通透，小红书风格", "公寓图片优化", API_KEY, API_URL)
-                            url = volcengine_enhance_image(img, opt_prompt, VOLCENGINE_API_KEY)
+                            opt_prompt = optimize_image_prompt(f"公寓室内照片，明亮通透，小红书风格。{pub_restrictions.strip()}", "公寓图片优化", API_KEY, API_URL)
+                            url = volcengine_enhance_image(img, opt_prompt, VOLCENGINE_API_KEY, pub_size_val)
                             optimized_urls.append(url)
                             resp_img = requests.get(url)
                             optimized_imgs.append(Image.open(io.BytesIO(resp_img.content)))
